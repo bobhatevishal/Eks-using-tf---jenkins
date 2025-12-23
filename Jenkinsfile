@@ -51,4 +51,30 @@ pipeline {
             }
         }
 
+        stage('Deploy to EKS Cluster') {
+            steps {
+                withCredentials([aws(credentialsId: "${AWS_CREDS}", 
+                                    accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
+                                    secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                    script {
+                        sh "aws eks update-kubeconfig --region ${AWS_REGION} --name ${CLUSTER_NAME}"
+                        sh "sed -i 's|IMAGE_PLACEHOLDER|${DOCKER_USER}/${IMAGE_NAME}:${BUILD_NUMBER}|g' k8s/deployment.yaml"
+                        sh "kubectl apply -f k8s/deployment.yaml"
+                        sh "kubectl rollout status deployment/my-app-deployment"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Successfully built Infra and Deployed App!"
+            sh "kubectl get nodes"
+            sh "kubectl get svc"
+        }
+        failure {
+            echo "Pipeline failed. Check Jenkins logs for details."
+        }
+    }
 }
