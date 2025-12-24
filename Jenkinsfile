@@ -1,8 +1,11 @@
 pipeline {
     agent any
 
+    parameters {
+        choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Select whether to create or destroy the infrastructure.')
+    }
+
     environment {
- 
         AWS_CREDS    = 'aws-svc-acct' 
         AWS_REGION   = 'us-east-1'
         CLUSTER_NAME = 'industry-eks-cluster'
@@ -24,10 +27,14 @@ pipeline {
                                     accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
                                     secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                     script {
-                
                         dir('practice') { 
                             sh 'terraform init'
-                            sh 'terraform plan'
+                            if (params.ACTION == 'apply') {
+                                sh 'terraform plan'
+                                sh 'terraform apply -auto-approve'
+                            } else {
+                                sh 'terraform destroy -auto-approve'
+                            }
                         }
                     }
                 }
@@ -35,12 +42,15 @@ pipeline {
         }
 
         stage('Build & Push to Docker Hub') {
+            // Only build and push if we are applying infrastructure
+            when {
+                expression { params.ACTION == 'apply' }
+            }
             steps {
                 withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDS}", 
                                                  passwordVariable: 'DOCKER_PASS', 
                                                  usernameVariable: 'DOCKER_USER_ID')]) {
                     script {
-                    
                         sh "echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER_ID} --password-stdin"
                         sh "docker build -t ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_NUMBER} ."
                         sh "docker build -t ${DOCKER_USER}/${IMAGE_NAME}:latest ."
@@ -52,6 +62,10 @@ pipeline {
         }
 
         stage('Deploy to EKS Cluster') {
+            // Only deploy if we are applying infrastructure
+            when {
+                expression { params.ACTION == 'apply' }
+            }
             steps {
                 withCredentials([aws(credentialsId: "${AWS_CREDS}", 
                                     accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
@@ -69,12 +83,22 @@ pipeline {
 
     post {
         success {
-            echo "Successfully built Infra and Deployed App!"
-            sh "kubectl get nodes"
-            sh "kubectl get svc"
+            script {
+                if (params.ACTION == 'apply') {
+                    echo "Successfully built Infra and Deployed App!"
+                    sh "kubectl get nodes"
+                    sh "kubectl get svc"
+                } else {
+                    echo "Infrastructure successfully destroyed."
+                }
+            }
         }
         failure {
             echo "Pipeline failed. Check Jenkins logs for details."
+        }
+        always {
+            // Cleanup local docker images to save space on agent
+            sh "docker logout || true"
         }
     }
 }
