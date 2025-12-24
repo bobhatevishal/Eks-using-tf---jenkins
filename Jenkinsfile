@@ -43,7 +43,7 @@ pipeline {
                 expression { params.ACTION == 'apply' }
             }
             steps {
-                withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDS}", 
+                withCredentials([usernamePassword(credentialsId: "${docker}", 
                                                  passwordVariable: 'DOCKER_PASS', 
                                                  usernameVariable: 'DOCKER_USER_ID')]) {
                     script {
@@ -62,7 +62,7 @@ pipeline {
                 expression { params.ACTION == 'apply' }
             }
             steps {
-                withCredentials([aws(credentialsId: "${AWS_CREDS}", 
+                withCredentials([aws(credentialsId: "${aws-svc-acct}", 
                                     accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
                                     secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                     script {
