@@ -15,11 +15,8 @@ pipeline {
     }
 
     stages {
-        stage('Checkout Github Repo') {
-            steps {
-                git 'https://github.com/bobhatevishal/Eks-using-tf---jenkins.git'
-            }
-        }
+        // The 'Declarative: Checkout SCM' stage happens automatically.
+        // We remove the manual 'Checkout Github Repo' stage to avoid 'Revision not found' errors.
 
         stage('Terraform Infrastructure') {
             steps {
@@ -42,7 +39,6 @@ pipeline {
         }
 
         stage('Build & Push to Docker Hub') {
-            // Only build and push if we are applying infrastructure
             when {
                 expression { params.ACTION == 'apply' }
             }
@@ -62,7 +58,6 @@ pipeline {
         }
 
         stage('Deploy to EKS Cluster') {
-            // Only deploy if we are applying infrastructure
             when {
                 expression { params.ACTION == 'apply' }
             }
@@ -97,7 +92,6 @@ pipeline {
             echo "Pipeline failed. Check Jenkins logs for details."
         }
         always {
-            // Cleanup local docker images to save space on agent
             sh "docker logout || true"
         }
     }
