@@ -17,7 +17,7 @@ pipeline {
 
         stage('Terraform Infrastructure') {
             steps {
-                withCredentials([aws(credentialsId: "${aws-svc-acct}", 
+                withCredentials([aws(credentialsId: 'aws-svc-acct', 
                                     accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
                                     secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                     script {
@@ -59,7 +59,7 @@ pipeline {
                 expression { params.ACTION == 'apply' }
             }
             steps {
-                withCredentials([aws(credentialsId: "${aws-svc-acct}", 
+                withCredentials([aws(credentialsId: 'aws-svc-acct', 
                                     accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
                                     secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                     script {
