@@ -6,11 +6,8 @@ pipeline {
     }
 
     environment {
-        AWS_CREDS    = 'aws-svc-acct' 
         AWS_REGION   = 'us-east-1'
         CLUSTER_NAME = 'industry-eks-cluster'
-        DOCKER_CREDS = 'docker-CREDS'
-        DOCKER_USER  = 'bobhatevishal'   
         IMAGE_NAME   = 'practice-app'    
     }
 
