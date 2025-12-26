@@ -9,14 +9,34 @@ pipeline {
 
     environment {
         // IDs must match exactly what you saved in Jenkins Credentials
-        AWS_CREDS = credentials('aws-svc-acct') 
-        PATH      = "${WORKSPACE}/bin:${PATH}"
+        AWS_ACCESS_KEY_ID     = credentials('aws-access-key')
+        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-key')
+        PATH                  = "${WORKSPACE}/bin:${PATH}"
     }
 
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
+            }
+        }
+
+        stage('Install System Tools') {
+            steps {
+                script {
+                    echo "--- Installing curl and unzip ---"
+                    // We attempt to install without sudo first, then with sudo if it fails.
+                    // Note: If 'sudo' is not found and 'apt-get' fails, the node is too restricted for self-install.
+                    sh '''
+                        if command -v apt-get &> /dev/null; then
+                            sudo apt-get update && sudo apt-get install -y curl unzip
+                        elif command -v yum &> /dev/null; then
+                            sudo yum install -y curl unzip
+                        else
+                            echo "Package manager not found or sudo not available."
+                        fi
+                    '''
+                }
             }
         }
 
@@ -27,24 +47,14 @@ pipeline {
                         mkdir -p ${WORKSPACE}/bin
                         cd ${WORKSPACE}/bin
                         
-                        if [ ! -f "terraform" ]; then
-                            echo "--- Downloading Terraform ---"
-                            curl -LO https://releases.hashicorp.com/terraform/1.9.5/terraform_1.9.5_linux_amd64.zip
-                            
-                            echo "--- Extracting without sudo ---"
-                            # Attempt extraction using unzip, fallback to python3 if unzip is missing
-                            if command -v unzip &> /dev/null; then
-                                unzip -o terraform_1.9.5_linux_amd64.zip
-                            elif command -v python3 &> /dev/null; then
-                                python3 -m zipfile -e terraform_1.9.5_linux_amd64.zip .
-                            else
-                                echo "ERROR: No unzip or python3 found on this node."
-                                exit 1
-                            fi
-                            
-                            chmod +x terraform
-                            rm terraform_1.9.5_linux_amd64.zip
-                        fi
+                        echo "--- Downloading Terraform ---"
+                        curl -LO https://releases.hashicorp.com/terraform/1.9.5/terraform_1.9.5_linux_amd64.zip
+                        
+                        echo "--- Extracting Terraform ---"
+                        unzip -o terraform_1.9.5_linux_amd64.zip
+                        
+                        chmod +x terraform
+                        rm terraform_1.9.5_linux_amd64.zip
                         
                         echo "--- Verifying ---"
                         ./terraform --version
@@ -77,7 +87,6 @@ pipeline {
 
         stage('Approval') {
             steps {
-                // This creates a button in the Jenkins UI you must click to proceed
                 input message: "Confirm ${params.ACTION}?", ok: 'Proceed'
             }
         }
@@ -93,7 +102,6 @@ pipeline {
 
     post {
         always {
-            // Clean up the plan file to keep the workspace clean
             sh "rm -f terraform/tfplan"
         }
     }
