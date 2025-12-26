@@ -8,34 +8,46 @@ pipeline {
     }
 
     environment {
-        // Adding local bin to PATH
-        PATH = "${WORKSPACE}/bin:${PATH}"
+        // IDs must match exactly what you saved in Jenkins Credentials
+        AWS_CREDS = credentials('aws-svc-acct') 
+        PATH      = "${WORKSPACE}/bin:${PATH}"
     }
 
     stages {
-        stage('Install Dependencies') {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Install Terraform') {
             steps {
                 script {
-                    // Create bin directory
-                    sh "mkdir -p ${WORKSPACE}/bin"
-                    
-                    // Check for unzip and install if missing (requires sudo on the node)
                     sh '''
-                        if ! command -v unzip &> /dev/null; then
-                            echo "unzip not found, attempting install..."
-                            sudo apt-get update && sudo apt-get install -y unzip
-                        fi
-                    '''
-
-                    // Download Terraform only if it doesn't exist to save time
-                    sh '''
-                        if [ ! -f "${WORKSPACE}/bin/terraform" ]; then
+                        mkdir -p ${WORKSPACE}/bin
+                        cd ${WORKSPACE}/bin
+                        
+                        if [ ! -f "terraform" ]; then
                             echo "--- Downloading Terraform ---"
-                            curl -O https://releases.hashicorp.com/terraform/1.9.5/terraform_1.9.5_linux_amd64.zip
-                            unzip -o terraform_1.9.5_linux_amd64.zip -d ${WORKSPACE}/bin
-                            chmod +x ${WORKSPACE}/bin/terraform
+                            curl -LO https://releases.hashicorp.com/terraform/1.9.5/terraform_1.9.5_linux_amd64.zip
+                            
+                            echo "--- Extracting without sudo ---"
+                            # Attempt extraction using unzip, fallback to python3 if unzip is missing
+                            if command -v unzip &> /dev/null; then
+                                unzip -o terraform_1.9.5_linux_amd64.zip
+                            elif command -v python3 &> /dev/null; then
+                                python3 -m zipfile -e terraform_1.9.5_linux_amd64.zip .
+                            else
+                                echo "ERROR: No unzip or python3 found on this node."
+                                exit 1
+                            fi
+                            
+                            chmod +x terraform
                             rm terraform_1.9.5_linux_amd64.zip
                         fi
+                        
+                        echo "--- Verifying ---"
+                        ./terraform --version
                     '''
                 }
             }
@@ -43,13 +55,8 @@ pipeline {
 
         stage('Terraform Init') {
             steps {
-                // Ensure this folder name matches your GitHub repo exactly
                 dir('terraform') {
-                    withCredentials([aws(credentialsId: 'aws-svc-acct', 
-                                        accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
-                                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
-                        sh 'terraform init'
-                    }
+                    sh 'terraform init'
                 }
             }
         }
@@ -57,15 +64,11 @@ pipeline {
         stage('Terraform Plan') {
             steps {
                 dir('terraform') {
-                    withCredentials([aws(credentialsId: 'aws-svc-acct', 
-                                        accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
-                                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
-                        script {
-                            if (params.ACTION == 'apply') {
-                                sh 'terraform plan -out=tfplan'
-                            } else {
-                                sh 'terraform plan -destroy -out=tfplan'
-                            }
+                    script {
+                        if (params.ACTION == 'apply') {
+                            sh 'terraform plan -out=tfplan'
+                        } else {
+                            sh 'terraform plan -destroy -out=tfplan'
                         }
                     }
                 }
@@ -74,18 +77,15 @@ pipeline {
 
         stage('Approval') {
             steps {
-                input message: "Proceed with ${params.ACTION}?", ok: 'Yes'
+                // This creates a button in the Jenkins UI you must click to proceed
+                input message: "Confirm ${params.ACTION}?", ok: 'Proceed'
             }
         }
 
         stage('Terraform Execution') {
             steps {
                 dir('terraform') {
-                    withCredentials([aws(credentialsId: 'aws-svc-acct', 
-                                        accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
-                                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
-                        sh 'terraform apply -input=false tfplan'
-                    }
+                    sh 'terraform apply -input=false tfplan'
                 }
             }
         }
@@ -93,14 +93,8 @@ pipeline {
 
     post {
         always {
-            // Clean up the plan file but keep the binary if you want to speed up next run
+            // Clean up the plan file to keep the workspace clean
             sh "rm -f terraform/tfplan"
-        }
-        success {
-            echo "Terraform ${params.ACTION} completed successfully."
-        }
-        failure {
-            echo "Pipeline failed. Check the logs for unzip, terraform, or AWS permission errors."
         }
     }
 }
