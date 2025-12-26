@@ -4,7 +4,11 @@ pipeline {
     }
 
     parameters {
-        choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Select whether to create or destroy the infrastructure.')
+        choice(
+            name: 'ACTION',
+            choices: ['apply', 'destroy'],
+            description: 'Select whether to create or destroy the infrastructure.'
+        )
     }
 
     environment {
@@ -15,12 +19,12 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
-    }
 
         stage('Install Terraform') {
             steps {
@@ -28,16 +32,16 @@ pipeline {
                     sh '''
                         mkdir -p ${WORKSPACE}/bin
                         cd ${WORKSPACE}/bin
-                        
+
                         echo "--- Downloading Terraform ---"
                         curl -LO https://releases.hashicorp.com/terraform/1.9.5/terraform_1.9.5_linux_amd64.zip
-                        
+
                         echo "--- Extracting Terraform ---"
                         unzip -o terraform_1.9.5_linux_amd64.zip
-                        
+
                         chmod +x terraform
                         rm terraform_1.9.5_linux_amd64.zip
-                        
+
                         echo "--- Verifying ---"
                         ./terraform --version
                     '''
@@ -84,7 +88,7 @@ pipeline {
 
     post {
         always {
-            sh "rm -f terraform/tfplan"
+            sh 'rm -f terraform/tfplan'
         }
     }
 }
