@@ -37,5 +37,5 @@ output "cluster_endpoint" {
 }
 
 output "region" {
-  value = "us-east-1"
+  value = "ap-south-1"
 }
