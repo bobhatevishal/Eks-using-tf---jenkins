@@ -1,95 +1,78 @@
 pipeline {
-    agent any
+    agent {
+        // Run directly on the agent, do NOT spin up a sibling container
+        label 'my-node-1'
+    }
 
     parameters {
         choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Select whether to create or destroy the infrastructure.')
     }
-
+    
     environment {
-        AWS_REGION   = 'us-east-1'
-        CLUSTER_NAME = 'industry-eks-cluster'
-        IMAGE_NAME   = 'practice-app'    
+        AWS_ACCESS_KEY_ID     = credentials('aws-access-key')
+        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-key')
+        // Add local bin to PATH so the shell can find the 'terraform' command we install
+        PATH                  = "${WORKSPACE}/bin:${PATH}"
     }
 
     stages {
-        // The 'Declarative: Checkout SCM' stage happens automatically.
-        // We remove the manual 'Checkout Github Repo' stage to avoid 'Revision not found' errors.
-
-        stage('Terraform Infrastructure') {
+        stage('Checkout') {
             steps {
-                withCredentials([aws(credentialsId: 'aws-svc-acct', 
-                                    accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
-                                    secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
-                    script {
-                        dir('practice') { 
-                            sh 'terraform init'
-                            if (params.ACTION == 'apply') {
-                                sh 'terraform plan'
-                                sh 'terraform apply -auto-approve'
-                            } else {
-                                sh 'terraform destroy -auto-approve'
-                            }
-                        }
-                    }
-                }
+                checkout scm
             }
         }
 
-        stage('Build & Push to Docker Hub') {
-            when {
-                expression { params.ACTION == 'apply' }
-            }
+        stage('Install Terraform') {
             steps {
-                withCredentials([usernamePassword(credentialsId: "${docker}", 
-                                                 passwordVariable: 'DOCKER_PASS', 
-                                                 usernameVariable: 'DOCKER_USER_ID')]) {
-                    script {
-                        sh "echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER_ID} --password-stdin"
-                        sh "docker build -t ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_NUMBER} ."
-                        sh "docker build -t ${DOCKER_USER}/${IMAGE_NAME}:latest ."
-                        sh "docker push ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_NUMBER}"
-                        sh "docker push ${DOCKER_USER}/${IMAGE_NAME}:latest"
-                    }
+                script {
+                    sh '''
+                        mkdir -p ${WORKSPACE}/bin
+                        cd ${WORKSPACE}/bin
+                        
+                        echo "--- Downloading Terraform ---"
+                        # Downloading a specific stable version (Linux AMD64)
+                        curl -O https://releases.hashicorp.com/terraform/1.9.5/terraform_1.9.5_linux_amd64.zip
+                        
+                        echo "--- Installing ---"
+                        unzip -o terraform_1.9.5_linux_amd64.zip
+                        chmod +x terraform
+                        rm terraform_1.9.5_linux_amd64.zip
+                        
+                        echo "--- Verifying ---"
+                        ./terraform --version
+                    '''
                 }
             }
         }
 
-        stage('Deploy to EKS Cluster') {
-            when {
-                expression { params.ACTION == 'apply' }
-            }
+        stage('Terraform Init') {
             steps {
-                withCredentials([aws(credentialsId: 'aws-svc-acct', 
-                                    accessKeyVariable: 'AWS_ACCESS_KEY_ID', 
-                                    secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
-                    script {
-                        sh "aws eks update-kubeconfig --region ${AWS_REGION} --name ${CLUSTER_NAME}"
-                        sh "sed -i 's|IMAGE_PLACEHOLDER|${DOCKER_USER}/${IMAGE_NAME}:${BUILD_NUMBER}|g' k8s/deployment.yaml"
-                        sh "kubectl apply -f k8s/deployment.yaml"
-                        sh "kubectl rollout status deployment/my-app-deployment"
-                    }
+                dir('terraform') {
+                    sh 'terraform init'
                 }
             }
         }
-    }
 
-    post {
-        success {
-            script {
-                if (params.ACTION == 'apply') {
-                    echo "Successfully built Infra and Deployed App!"
-                    sh "kubectl get nodes"
-                    sh "kubectl get svc"
-                } else {
-                    echo "Infrastructure successfully destroyed."
+        stage('Terraform Plan') {
+            steps {
+                dir('terraform') {
+                    sh 'terraform plan -out=tfplan'
                 }
             }
         }
-        failure {
-            echo "Pipeline failed. Check Jenkins logs for details."
+
+        stage('Approval') {
+            steps {
+                input message: 'Create/Update Infrastructure?', ok: 'Yes'
+            }
         }
-        always {
-            sh "docker logout || true"
+
+        stage('Terraform Apply') {
+            steps {
+                dir('terraform') {
+                    sh 'terraform apply -input=false tfplan'
+                }
+            }
         }
     }
 }
