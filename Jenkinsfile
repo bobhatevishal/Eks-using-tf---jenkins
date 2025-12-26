@@ -20,25 +20,7 @@ pipeline {
                 checkout scm
             }
         }
-
-        stage('Install System Tools') {
-            steps {
-                script {
-                    echo "--- Installing curl and unzip ---"
-                    // We attempt to install without sudo first, then with sudo if it fails.
-                    // Note: If 'sudo' is not found and 'apt-get' fails, the node is too restricted for self-install.
-                    sh '''
-                        if command -v apt-get &> /dev/null; then
-                            sudo apt-get update && sudo apt-get install -y curl unzip
-                        elif command -v yum &> /dev/null; then
-                            sudo yum install -y curl unzip
-                        else
-                            echo "Package manager not found or sudo not available."
-                        fi
-                    '''
-                }
-            }
-        }
+    }
 
         stage('Install Terraform') {
             steps {
